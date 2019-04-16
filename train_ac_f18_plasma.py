@@ -29,7 +29,9 @@ from PyPolySample import PolySample
 NPY_SQRT1_2 = 1/(2**0.5)
 NUM = 60
 OFFSET = 2
-GLOBAL_T_SEQ = [39.2 -OFFSET]*NUM+\
+#GLOBAL_T_SEQ = [39.2 -OFFSET]*NUM+\
+GLOBAL_T_SEQ = [39.2 -OFFSET + 3/NUM*i for i in range(NUM)]+\
+               [39.2 -OFFSET + 3 + 0.3*np.sin(0.5*i) for i in range(NUM)]+\
                [43.6 -OFFSET]*NUM+\
                [44.01-OFFSET]*NUM+\
                [40.3 -OFFSET]*NUM+\
@@ -40,6 +42,12 @@ GLOBAL_T_SEQ = [39.2 -OFFSET]*NUM+\
                #[43.3]*NUM+\
                #[44.6]*NUM
 
+#GLOBAL_T_SEQ = [35]*60*4
+GLOBAL_T_SEQ = [45]*60+[38]*30+[45]*30+[38]*30+[45]*30
+
+DYN_MAX_KWARGS = {'tau_lo': 2.4, 'tau_hi': 25, 'Dyss_lo': -3.1, 'Dyss_hi': 3.1}
+DYN_TauMAX_SSSmall_KWARGS = {'tau_lo': 2.4, 'tau_hi': 25, 'Dyss_lo': -1.0, 'Dyss_hi': 1.0}
+
 DYN_S = [(0.9870,0.1100),(0.9870,0.0600),(0.8800,0.5500),(0.8800,1.0300)]
 DYN_0S= [(0.9870,0.1100),(0.9870,0.0600),(0.6000,1.8300),(0.6000,3.4000)]
 DYN_0 = [(0.6000,3.6400),(0.6000,1.5000),(0.9600,0.1500),(0.9600,0.3500)]
@@ -48,6 +56,8 @@ DYN_2 = [(0.8900,0.8525),(0.8900,0.5500),(0.9500,0.2500),(0.9500,0.3875)]
 DYN_3 = [(0.9000,0.7600),(0.9000,0.5000),(0.9400,0.3000),(0.9400,0.4650)]
 DYN_4 = [(0.9100,0.7000),(0.9100,0.4500),(0.9330,0.3500),(0.9330,0.5100)]
 DYN_N = [(0.9232,0.4999),(0.9232,0.5001),(0.9234,0.5001),(0.9234,0.4999)]
+
+#DYNA1A2
 
 #============================================================================================#
 # Utilities
@@ -147,7 +157,8 @@ class Agent(object):
         self.gamma = estimate_advantage_args['gamma']
         self.normalize_advantages = estimate_advantage_args['normalize_advantages']
 
-        self.polysampler = PolySample(DYN_0S)
+        #self.polysampler = PolySample(DYN_0S)
+        self.polysampler = PolySample(DYN_N)
 
     def init_tf_sess(self):
         tf_config = tf.ConfigProto(inter_op_parallelism_threads=1, intra_op_parallelism_threads=1)
@@ -475,46 +486,95 @@ class Agent(object):
         paths = []
         max_reward_path = -np.inf
         #ob = env.reset(newyset = np.random.uniform(-1.6,10.4))
+        num_traj = 1
         while True:
             animate_this_episode=(len(paths)==0 and (itr % 10 == 0) and self.animate)
-            path = self.sample_trajectory(env, animate_this_episode)
+            if num_traj == 1:
+                path = self.sample_trajectory(env, animate_this_episode, 
+                                                   debug_print = True)
+            else:
+                path = self.sample_trajectory(env, animate_this_episode)
+            
             paths.append(path)
             #timesteps_this_batch += pathlength(path)
             timesteps_this_batch += sum(path['fha_mask'])
             if timesteps_this_batch > self.min_timesteps_per_batch:
                 break
+
+            num_traj += 1
             # print out either first trajectory or the best one
             #if(np.sum(path["reward"])>max_reward_path):
-            if(len(paths)==1):
-                max_reward_path = np.sum(path["reward"])
-                to_print = path
-                to_print["env.a"] = env._a
-                to_print["env.b"] = env._b
-        print("This iter: a = %.4f, b = %.4f"%(to_print["env.a"],to_print["env.b"]))
-        for i in range(len(to_print["reward"])):
-            print("%3d %2.4f %2.4f %2.4f %2.4f %2.4f %2.4f %2.4f"%(i, 
-                to_print["extras"][i]['P'], 
-                to_print["extras"][i]['T'], 
-                to_print["extras"][i]['Tp'], 
-                to_print["extras"][i]['Tset'], 
-                to_print["reward"][i], 
-                to_print["extras"][i]['sin'], 
-                to_print["extras"][i]['ranX']))
-        return paths, timesteps_this_batch, to_print
+        #    if(len(paths)==1):
+        #        max_reward_path = np.sum(path["reward"])
+        #        to_print = path
+        #        to_print["params"] = env.phys_param
+        #print("This iter params: %s"%(to_print["params"]))
+        #for i in range(len(to_print["reward"])):
+        #    print("%3d %2.4f %2.4f %2.4f %2.4f %2.4f %2.4f %2.4f"%(i, 
+        #        to_print["extras"][i]['P'], 
+        #        to_print["extras"][i]['T'], 
+        #        to_print["extras"][i]['Tp'], 
+        #        to_print["extras"][i]['Tset'], 
+        #        to_print["reward"][i], 
+        #        to_print["extras"][i]['sin'], 
+        #        to_print["extras"][i]['ranX']))
+        return paths, timesteps_this_batch
 
 
-    def sample_trajectory(self, env, animate_this_episode):
+    def sample_trajectory(self, env, animate_this_episode,debug_print=False,
+                                                          forced_pad=True):
         #ob = env.reset()
         #ob = env.reset(y=np.random.uniform(-1.6, 10.4), newyset=np.random.uniform(-1.6,10.4))
-        ob = env.reset_setpoint(newyset=np.random.uniform(-1.6,10.4), resetk = True)
-        # now perturb model dynamics
-        #env._b = np.random.uniform(0.4,0.6)
-        #env._a = np.random.uniform(0.85,0.933)
-        point = self.polysampler.random_points_in_polygon(1)
-        env._a = point[0][0]
-        env._b = point[0][1]
-        #print(env._a)
-        #print(env._b)
+        ob = env.reset_setpoint(newyset=np.random.uniform(34,46), resetk = True)
+
+        # randomly select model dynamics from the polysampler
+        #point = self.polysampler.random_points_in_polygon(1)
+
+        # randomly sample a tau, Dxss range and convert to a, b
+        #point = self.polysampler.custom_plasma_sampling(1, **DYN_TauMAX_SSSmall_KWARGS) 
+
+        # reset the model a, b parameters after update
+        #env._a = point[0][0]
+        #env._b = point[0][1]
+
+        # sample in physics model space
+        env.sample_phys_params()
+
+        if(forced_pad):
+            if(debug_print):
+                print(env._obs)
+            # Randomly choose a up ramp, down ramp, or random power cycle
+            # to pad the beginning of the simulation
+            cycle = np.random.choice(3,1)
+            if cycle == 0:
+                ac_init = np.linspace(1.1,5.0,4)
+            elif cycle == 1:
+                ac_init = np.linspace(5.0,1.0,4)
+            elif cycle == 2:
+                ac_init = np.random.uniform(1.1,5.0,size=4)
+            else:
+                sys.exit()
+            ob_init, rew_init, done_init, extra_init = env.step_Mtimes(ac_init)
+
+            if debug_print:
+                path_init = {"observation" : np.array(ob_init),
+                             "reward" : np.array(rew_init),
+                             "extras" : np.array(extra_init)}
+                print("Parameters: %s" % env.phys_param)
+                for i in range(len(path_init["observation"])):
+                    print("%3d %2.4f %2.4f %2.4f %2.4f %2.4f %2.4f %2.4f"%(i, 
+                        path_init["extras"][i]['P'], 
+                        path_init["extras"][i]['T'], 
+                        path_init["extras"][i]['Tp'], 
+                        path_init["extras"][i]['Tset'], 
+                        path_init["reward"][i], 
+                        ac_init[i],
+                        path_init["extras"][i]['ranX']))
+
+            if(debug_print):
+                print(env._obs)
+
+            ob = ob_init[-1]
 
         obs, acs, rewards, next_obs, terminals, extras = [], [], [], [], [], []
         fha_mask = []
@@ -531,11 +591,15 @@ class Agent(object):
             #print(steps)
             #print(self.extend_path_length)
             if self.ac_bounds == False:
-                ac = self.sess.run(self.sy_sampled_ac, feed_dict={'ob:0':np.array(obs[-1])[None]}) # YOUR HW2 CODE HERE
+                ac = self.sess.run(self.sy_sampled_ac, 
+                                   feed_dict={'ob:0':np.array(obs[-1])[None]}) 
+                # YOUR HW2 CODE HERE
             else:
-                ac = self.sess.run(self.sy_sampled_ac, feed_dict={'ob:0':np.array(obs[-1])[None],
-                                                                  self.sy_ac_boundlow_a: self.ac_bounds[0],
-                                                                  self.sy_ac_boundhi_a:  self.ac_bounds[1]})
+                ac = self.sess.run(self.sy_sampled_ac, 
+                            feed_dict={'ob:0':np.array(obs[-1])[None],
+                                       self.sy_ac_boundlow_a: self.ac_bounds[0],
+                                       self.sy_ac_boundhi_a:  self.ac_bounds[1]
+                                      })
             ac = ac[0]
             acs.append(ac)
             ob, rew, done, extra = env.step(ac)
@@ -547,6 +611,7 @@ class Agent(object):
             rewards.append(rew)
             extras.append(extra)
             steps += 1
+
             # If the episode ended, the corresponding terminal value is 1
             # otherwise, it is 0
             # NOTE: now we are doing extended MC path sampling BEYOND episode time limit
@@ -575,6 +640,21 @@ class Agent(object):
                 "terminal": np.array(terminals, dtype=np.float32),
                 "fha_mask": np.array(fha_mask, dtype=np.float32),
                 "extras": extras}
+
+
+        if debug_print:
+            print("----------------------------------------------------")
+            for i in range(len(path["reward"])):
+                print("%3d %2.4f %2.4f %2.4f %2.4f %2.4f %2.4f %2.4f"%(i, 
+                    path["extras"][i]['P'], 
+                    path["extras"][i]['T'], 
+                    path["extras"][i]['Tp'], 
+                    path["extras"][i]['Tset'], 
+                    path["reward"][i], 
+                    path["action"][i], 
+                    path["extras"][i]['ranX']))
+            
+
         return path
 
 
@@ -595,13 +675,16 @@ class Agent(object):
                 steps+=1
         return rewards
 
-    def run_custom_trajectory(self, env, lowyset=-1.6, highyset=10.4, ysets = None):
+    def run_custom_trajectory(self, env, ysets, disturbance = {}):
         """
         Given a sequence of set point targets, use the RL agent to track those setpoints
 
         args:
             env - RL enviroment
-            lowyset
+            yset - list of setpoints to track
+            disturbance - a dictionary corresponding to model dynamics distburances
+                key (int) - timestep to apply the distubrance
+                value - the model parameters to change to at that time step
         """
     
         #ob = env.reset()
@@ -628,11 +711,16 @@ class Agent(object):
             #for val in env._olddev:
             #    print(val)
 
-            if steps > 299:
+            #if steps > 299:
+            if steps > len(ysets)-1:
                 break
             else:
                 ret.append(logdata)
                 steps+=1
+
+            # can model disturbances to model dynamics
+            if steps in disturbance.keys():
+                env.phys_param = disturbance[steps]
 
             # periodically update the set point to see how well the controller
             # performs in a dynamic environment
@@ -848,7 +936,6 @@ def train_AC(
     if(env_name=="PlasmaModel"):
         yset = 5
         env = pm(a=0.9233, b=0.5, c=0.673, yset=yset)
-    
     else:
         env = gym.make(env_name)
 
@@ -858,6 +945,8 @@ def train_AC(
     env.seed(seed)
 
     # Maximum length for episodes
+    # We extend the episode by extend_path_length so the value function 
+    # doesn't have to be computed for the last "extend_path_length" time steps
     max_path_length = max_path_length or env.spec.max_episode_steps
     extend_path_length = max_path_length+extend_path_length
     #env.tags['wrapper_config.TimeLimit.max_episode_steps'] = extend_path_length
@@ -876,6 +965,8 @@ def train_AC(
         ac_bounds = env.action_bounds
     else:
         ac_bounds = False
+
+    print(ac_bounds)
 
     #========================================================================================#
     # Initialize Agent
@@ -924,10 +1015,11 @@ def train_AC(
         #print(dir(logz.G))
         #advfile = open(os.path.join(logz.G.output_dir,"adv_histogram.txt"),"w")
 
+        max_mean_returns = -10000000000000000
         total_timesteps = 0
         for itr in range(n_iter):
             print("********** Iteration %i ************"%itr)
-            paths, timesteps_this_batch, opt_rollout = agent.sample_trajectories(itr, env)
+            paths, timesteps_this_batch = agent.sample_trajectories(itr, env)
             total_timesteps += timesteps_this_batch
 
             # Build arrays for observation, action for the policy gradient update by concatenating 
@@ -1005,25 +1097,23 @@ def train_AC(
             #    startind+=len(path["observation"])
             #temporalfile.close()
 
+            # write entire tf session so it can be loaded later and executed in real time
+            if(np.mean(returns) > max_mean_returns):
+                agent.saver.save(agent.sess, os.path.join(logz.G.output_dir,"saved.tf"))
+                print("Best iteration yet, saving TF state")
+                max_mean_returns = np.mean(returns)
+        
+
         #advfile.close()
 
         # Perform any desired validation experiments
-        print("Validating with long control sequence:")
-        yset_seq = [env.T_to_y(T) for T in GLOBAL_T_SEQ]
-        env._a = 0.9233
-        env._b = 0.5
-        seq1 = agent.run_custom_trajectory(env, lowyset=0, highyset=12, ysets = yset_seq)
-        write_control_sequence(os.path.join(logz.G.output_dir,"seqN.txt"),seq1)
+        #print("Validating with long control sequence:")
+        #yset_seq = [env.T_to_y(T) for T in GLOBAL_T_SEQ]
+        #env._a = 0.9233
+        #env._b = 0.5
+        #seq1 = agent.run_custom_trajectory(env, ysets = yset_seq)
+        #write_control_sequence(os.path.join(logz.G.output_dir,"seqN.txt"),seq1)
 
-        #seq2 = agent.run_custom_trajectory(env, lowyset=1, highyset=9)
-        #write_control_sequence(os.path.join(logz.G.output_dir,"seq2.txt"),seq2)
-
-        #seq3 = agent.run_custom_trajectory(env, lowyset=3, highyset=7)
-        #write_control_sequence(os.path.join(logz.G.output_dir,"seq3.txt"),seq3)
-
-        # write entire tf session so it can be loaded later and executed in real time
-        agent.saver.save(agent.sess, os.path.join(logz.G.output_dir,"saved.tf"))
-    
 
 def init_live_AC_agent(args):
 
@@ -1086,7 +1176,14 @@ def init_live_AC_agent(args):
         'normalize_advantages': args['normalize_advantages'],
     }
 
-    agent = Agent(computation_graph_args, sample_trajectory_args, estimate_advantage_args) #estimate_return_args
+    #plasma_args = {
+    #    'dynamics_model' :    args['dynamics_model'],
+    #    'param_uncertainty' : args['param_uncertainty'],
+    #    'ranXsig' :           args['ranXsig']
+    #}
+
+    agent = Agent(computation_graph_args, sample_trajectory_args, 
+                  estimate_advantage_args) #estimate_return_args
 
     # build computation graph
     agent.build_computation_graph()
@@ -1097,10 +1194,6 @@ def init_live_AC_agent(args):
     # now load the trained model into the initialized agent
     agent.saver.restore(agent.sess, os.path.join(args['logdir'],'saved.tf'))
 
-    # double check that the agent works for the in silico model
-    #seqValidate = agent.run_custom_trajectory(env, lowyset=-1.6, highyset=10.4)
-    #write_control_sequence(os.path.join(args['logdir'],"seqValidate.txt"),seqValidate)
-
     return agent, env
 
 def run_insilico_agent(agent, env, args, ysets=None):
@@ -1108,76 +1201,286 @@ def run_insilico_agent(agent, env, args, ysets=None):
     Do some random performance validation of a trained model
     """
 
+    def gen_save_string(param,sig,u):
+        it = 1
+        s = "seq_"
+        for p in param:
+            s += "p%d-%.4f_"%(it,p)
+            it+=1
+
+        s+="ranXsig%.4f_ranXu%.4f.txt"%(sig,u)
+
+        return s
+
     # test 1: modify some of the in silico model parameters to see how RL control
     # performance changes
-    env._a = 0.75
-    env._b = 1.7
-    seqValidate = agent.run_custom_trajectory(env, lowyset=-1.6, highyset=10.4, ysets=ysets)
-    write_control_sequence(os.path.join(args['logdir'],"seq_a%.4fb%.4f_ranXsig%.2f.txt"%(env._a, env._b, env._ranXsig)),seqValidate)
+    #env._a = 0.75
+    #env._b = 1.7
+    #seqValidate = agent.run_custom_trajectory(env, ysets=ysets)
+    #string = gen_save_string(env._a, env._b, env._ranXsig, env._ranXu)
+    #write_control_sequence(os.path.join(args['logdir'],string),seqValidate)
 
-    env._a = 0.88
-    env._b = 0.93
-    seqValidate = agent.run_custom_trajectory(env, lowyset=-1.6, highyset=10.4, ysets=ysets)
-    write_control_sequence(os.path.join(args['logdir'],"seq_a%.4fb%.4f_ranXsig%.2f.txt"%(env._a, env._b, env._ranXsig)),seqValidate)
+    #env._a = 0.88
+    #env._b = 0.93
+    #seqValidate = agent.run_custom_trajectory(env, ysets=ysets)
+    #string = gen_save_string(env._a, env._b, env._ranXsig, env._ranXu)
+    #write_control_sequence(os.path.join(args['logdir'],string),seqValidate)
 
-    env._a = 0.9
-    env._b = 0.72
-    seqValidate = agent.run_custom_trajectory(env, lowyset=-1.6, highyset=10.4, ysets=ysets)
-    write_control_sequence(os.path.join(args['logdir'],"seq_a%.4fb%.4f_ranXsig%.2f.txt"%(env._a, env._b, env._ranXsig)),seqValidate)
+    #env._a = 0.9
+    #env._b = 0.72
+    #seqValidate = agent.run_custom_trajectory(env, ysets=ysets)
+    #string = gen_save_string(env._a, env._b, env._ranXsig, env._ranXu)
+    #write_control_sequence(os.path.join(args['logdir'],string),seqValidate)
+    #
+    #env._a = 0.9233
+    #env._b = 0.5
+    #seqValidate = agent.run_custom_trajectory(env, ysets=ysets)
+    #string = gen_save_string(env._a, env._b, env._ranXsig, env._ranXu)
+    #write_control_sequence(os.path.join(args['logdir'],string),seqValidate)
+
+    #env._a = 0.94
+    #env._b = 0.39
+    #seqValidate = agent.run_custom_trajectory(env, ysets=ysets)
+    #string = gen_save_string(env._a, env._b, env._ranXsig, env._ranXu)
+    #write_control_sequence(os.path.join(args['logdir'],string),seqValidate)
+
+    #env._a = 0.96
+    #env._b = 0.2
+    #seqValidate = agent.run_custom_trajectory(env, ysets=ysets)
+    #string = gen_save_string(env._a, env._b, env._ranXsig, env._ranXu)
+    #write_control_sequence(os.path.join(args['logdir'],string),seqValidate)
+
+    #env._a = 0.987
+    #env._b = 0.11
+    #seqValidate = agent.run_custom_trajectory(env, ysets=ysets)
+    #string = gen_save_string(env._a, env._b, env._ranXsig, env._ranXu)
+    #write_control_sequence(os.path.join(args['logdir'],string),seqValidate)
+
+    #env._a = 0.9233
+    #env._b = 0.8
+    #seqValidate = agent.run_custom_trajectory(env, ysets=ysets)
+    #string = gen_save_string(env._a, env._b, env._ranXsig, env._ranXu)
+    #write_control_sequence(os.path.join(args['logdir'],string),seqValidate)
+
+    env.phys_param[0] = 3.0
+    env.phys_param[1] = 0.96
+    env.phys_param[2] = 26
+    seqValidate = agent.run_custom_trajectory(env, ysets=ysets)
+    string = gen_save_string(env.phys_param, 
+                             env._ranXsig, env._ranXu)
+    write_control_sequence(os.path.join(args['logdir'],string),seqValidate)
+
+    env.phys_param[0] = 1.8
+    env.phys_param[1] = 0.96
+    env.phys_param[2] = 26
+    seqValidate = agent.run_custom_trajectory(env, ysets=ysets)
+    string = gen_save_string(env.phys_param, 
+                             env._ranXsig, env._ranXu)
+    write_control_sequence(os.path.join(args['logdir'],string),seqValidate)
+
+    env.phys_param[0] = 1.8
+    env.phys_param[1] = 0.66
+    env.phys_param[2] = 26
+    seqValidate = agent.run_custom_trajectory(env, ysets=ysets)
+    string = gen_save_string(env.phys_param, 
+                             env._ranXsig, env._ranXu)
+    write_control_sequence(os.path.join(args['logdir'],string),seqValidate)
+
+    env.phys_param[0] = 3.0
+    env.phys_param[1] = 0.66
+    env.phys_param[2] = 26
+    seqValidate = agent.run_custom_trajectory(env, ysets=ysets)
+    string = gen_save_string(env.phys_param, 
+                             env._ranXsig, env._ranXu)
+    write_control_sequence(os.path.join(args['logdir'],string),seqValidate)
+
+    env.phys_param[0] = 2.39
+    env.phys_param[1] = 0.82
+    env.phys_param[2] = 26
+    seqValidate = agent.run_custom_trajectory(env, ysets=ysets)
+    string = gen_save_string(env.phys_param, 
+                             env._ranXsig, env._ranXu)
+    write_control_sequence(os.path.join(args['logdir'],string),seqValidate)
+
+
+    env.phys_param[0] = 0.3
+    env.phys_param[1] = 0.08
+    env.phys_param[2] = 26
+    seqValidate = agent.run_custom_trajectory(env, ysets=ysets)
+    string = gen_save_string(env.phys_param, 
+                             env._ranXsig, env._ranXu)
+    write_control_sequence(os.path.join(args['logdir'],string),seqValidate)
+
+    env.phys_param[0] = 6
+    env.phys_param[1] = 2
+    env.phys_param[2] = 26
+    seqValidate = agent.run_custom_trajectory(env, ysets=ysets)
+    string = gen_save_string(env.phys_param, 
+                             env._ranXsig, env._ranXu)
+    write_control_sequence(os.path.join(args['logdir'],string),seqValidate)
+
+    env.phys_param[0] = 10
+    env.phys_param[1] = 3.3
+    env.phys_param[2] = 26
+    seqValidate = agent.run_custom_trajectory(env, ysets=ysets)
+    string = gen_save_string(env.phys_param, 
+                             env._ranXsig, env._ranXu)
+    write_control_sequence(os.path.join(args['logdir'],string),seqValidate)
+
+
+    ######################## GLASS 3 sigma  ############################
     
-    env._a = 0.9233
-    env._b = 0.5
-    seqValidate = agent.run_custom_trajectory(env, lowyset=-1.6, highyset=10.4, ysets=ysets)
-    write_control_sequence(os.path.join(args['logdir'],"seq_a%.4fb%.4f_ranXsig%.2f.txt"%(env._a, env._b, env._ranXsig)),seqValidate)
 
-    env._a = 0.94
-    env._b = 0.39
-    seqValidate = agent.run_custom_trajectory(env, lowyset=-1.6, highyset=10.4, ysets=ysets)
-    write_control_sequence(os.path.join(args['logdir'],"seq_a%.4fb%.4f_ranXsig%.2f.txt"%(env._a, env._b, env._ranXsig)),seqValidate)
 
-    env._a = 0.96
-    env._b = 0.2
-    seqValidate = agent.run_custom_trajectory(env, lowyset=-1.6, highyset=10.4, ysets=ysets)
-    write_control_sequence(os.path.join(args['logdir'],"seq_a%.4fb%.4f_ranXsig%.2f.txt"%(env._a, env._b, env._ranXsig)),seqValidate)
 
-    env._a = 0.987
-    env._b = 0.11
-    seqValidate = agent.run_custom_trajectory(env, lowyset=-1.6, highyset=10.4, ysets=ysets)
-    write_control_sequence(os.path.join(args['logdir'],"seq_a%.4fb%.4f_ranXsig%.2f.txt"%(env._a, env._b, env._ranXsig)),seqValidate)
+    ######################## GLASS CENTERED ############################
+    # High Tinf
+    env.phys_param[0] = 2.39
+    env.phys_param[1] = 0.82
+    env.phys_param[2] = 28
+    seqValidate = agent.run_custom_trajectory(env, ysets=ysets)
+    string = gen_save_string(env.phys_param, 
+                             env._ranXsig, env._ranXu)
+    write_control_sequence(os.path.join(args['logdir'],string),seqValidate)
 
+    # Normal Tinf
+    env.phys_param[0] = 2.39
+    env.phys_param[1] = 0.82
+    env.phys_param[2] = 22
+    seqValidate = agent.run_custom_trajectory(env, ysets=ysets)
+    string = gen_save_string(env.phys_param, 
+                             env._ranXsig, env._ranXu)
+    write_control_sequence(os.path.join(args['logdir'],string),seqValidate)
+
+    # Low Tinf
+    env.phys_param[0] = 2.39
+    env.phys_param[1] = 0.82
+    env.phys_param[2] = 18
+    seqValidate = agent.run_custom_trajectory(env, ysets=ysets)
+    string = gen_save_string(env.phys_param, 
+                             env._ranXsig, env._ranXu)
+    write_control_sequence(os.path.join(args['logdir'],string),seqValidate)
+    #######################################################################
+
+
+    ######################## ALUMINUM CENTERED ############################
+    # High Tinf
+    env.phys_param[0] = 1.1236
+    env.phys_param[1] = 0.7113
+    env.phys_param[2] = 28
+    seqValidate = agent.run_custom_trajectory(env, ysets=ysets)
+    string = gen_save_string(env.phys_param, 
+                             env._ranXsig, env._ranXu)
+    write_control_sequence(os.path.join(args['logdir'],string),seqValidate)
+
+    # Normal Tinf
+    env.phys_param[0] = 1.1236
+    env.phys_param[1] = 0.7113
+    env.phys_param[2] = 22
+    seqValidate = agent.run_custom_trajectory(env, ysets=ysets)
+    string = gen_save_string(env.phys_param, 
+                             env._ranXsig, env._ranXu)
+    write_control_sequence(os.path.join(args['logdir'],string),seqValidate)
+
+    # Low Tinf
+    env.phys_param[0] = 1.1236
+    env.phys_param[1] = 0.7113
+    env.phys_param[2] = 18
+    seqValidate = agent.run_custom_trajectory(env, ysets=ysets)
+    string = gen_save_string(env.phys_param, 
+                             env._ranXsig, env._ranXu)
+    write_control_sequence(os.path.join(args['logdir'],string),seqValidate)
+    #######################################################################
+
+
+    ######################## HYPOTHETICAL FOR PAPER ############################
+    env.phys_param[0] = 3.5
+    env.phys_param[1] = 2.1
+    env.phys_param[2] = 22
+    seqValidate = agent.run_custom_trajectory(env, ysets=ysets)
+    string = gen_save_string(env.phys_param, 
+                             env._ranXsig, env._ranXu)
+    write_control_sequence(os.path.join(args['logdir'],string),seqValidate)
+    #######################################################################
+
+
+
+    ######################### SIM GLASS DISTURBANCE ############################
+    #for i in range(0,50):
+    #    env.phys_param[0] = 2.39
+    #    env.phys_param[1] = 0.82
+    #    env.phys_param[2] = 22
+    #    seqValidate = agent.run_custom_trajectory(env, ysets=[40]*40*4,
+    #                                              disturbance={\
+    #                                                           120:[1.12,0.71,18],
+    #                                                           80:[2.39,0.82,22],
+    #                                                           40:[1.12,0.71,18]\
+    #                                                           })
+    #                                                           #120:[5.0, 2.0,22],
+    #    #string = gen_save_string(env.phys_param, 
+    #    #                         env._ranXsig, env._ranXu)
+    #    string = "seq_ranXsig_%.4f_DISTURBANCEv1-%03d.txt"%(env._ranXsig,i)
+    #    write_control_sequence(os.path.join(args['logdir'],string),seqValidate)
+
+    #
+    ########################################################################
 
 
     # generate a heat map to visualize performance over parameter space
-    agent.polysampler = PolySample(DYN_0S)
+    agent.polysampler = PolySample([(3.,0.96),(1.8,0.96),(1.8,0.66),(3.0,0.66)])
     x, y, te, tdu = [], [], [], []
-    for i in range(200):
+    for i in range(5000):
+        print(i)
+        # sample points within an a, b polygon
         point = agent.polysampler.random_points_in_polygon(1)
-        env._a = point[0][0]
-        env._b = point[0][1]
 
-        seqValidate = agent.run_custom_trajectory(env, lowyset=-1.6, highyset=10.4, ysets=ysets)
+        # sample points within the tau, gain range
+        #point = agent.polysampler.custom_plasma_sampling(1, **DYN_TauMAX_SSSmall_KWARGS)
+
+        # set the current a, b parameters in the environment
+        #env._a = point[0][0]
+        #env._b = point[0][1]
+        #env.phys_param[0] = point[0][0]
+        #env.phys_param[1] = point[0][1]
+
+        #scaler = np.random.uniform(0.3,1.5)
+        #env.phys_param = [np.random.normal(2.39, 0.2)*scaler, 
+        #                  np.random.normal(0.8177, 0.05)*scaler, 
+        #                  np.random.uniform(26,28)]
+
+        #a1 = np.random.uniform(0, 1)*4 + 0.25
+        #env.phys_param = [a1,
+        #                  np.random.uniform(0, 0.5)+0.3+0.15*a1,
+        #                  28]  
+
+        #env.phys_param = [np.random.uniform(0.25, 4.25),
+        #                  np.random.uniform(0.4, 1.4),
+        #                  22]
+
+        env.phys_param = [np.random.uniform(0.15, 7),
+                          np.random.uniform(0.3, 2.5),
+                          22]
+
+        seqValidate = agent.run_custom_trajectory(env, ysets=ysets)
         data = np.array(seqValidate)   
- 
-        totale = np.sum(np.abs(data[:,1]-data[:,2]))
-        totaldelu = np.sum([np.abs(data[i+1,3]-data[i,3]) for i in range(len(data[:,3])-1)])
 
-        x.append(env._a)
-        y.append(env._b)
+        startind = 60 
+        totale = np.sum(np.abs(data[startind:,1]-data[startind:,2]))
+        totaldelu = np.sum([np.abs(data[startind+i+1,3]-data[startind+i,3]) for i in range(len(data[startind:,3])-1)])
+
+        #x.append(env._a)
+        #y.append(env._b)
+        x.append(env.phys_param[0])
+        y.append(env.phys_param[1])
         te.append(totale)
         tdu.append(totaldelu)
 
-    fname = os.path.join(args['logdir'], "ensemble_training_summary_noise%.2f.txt"%env._ranXsig)
+    fname = os.path.join(args['logdir'], 
+                         "ensemble_training_summary_noise%.2f_Tinf-%.4f.txt"%\
+                         (env._ranXsig,env.phys_param[2]))
+
     print("Saving ensemble performance to: %s"%fname)
     np.savetxt(fname, np.c_[x,y,te,tdu])
-    #plt.figure(0, figsize = (1.6, 2.5))
-    #plt.scatter(x, y, c=c, s=8, cmap=plt.cm.plasma)
-    #cbar = plt.colorbar()
-    #cbar.set_label(r"$CE$")
-    #plt.ylabel(r"$b$")
-    #plt.xlabel(r"$a$")
-    #plt.tight_layout()
-    #plt.savefig(os.path.join(args['logdir'], "totale_ensemble_training.pdf"), transparent = True)
-    #print("saved ensemble performance to: %s"%os.path.join(args['logdir'], "totale_ensemble_training.pdf"))
         
         
 
@@ -1206,16 +1509,17 @@ def run_live_agent(agent, env, s, args):
         #    yset_seq.extend([np.random.uniform(-1.6,10.4)]*tsteps) # populated with various desired yset values
 
         # predefined set point tracking for standardized comparison
-        yset_seq = [env.T_to_y(T) for T in GLOBAL_T_SEQ]
+        #yset_seq = [env.T_to_y(T) for T in GLOBAL_T_SEQ]
+        yset_seq = GLOBAL_T_SEQ
 
-        print("y_set (scaled) set point tracking:")
+        print("y_set set point tracking:")
         print(yset_seq)
 
         print(env._obs)
         # must completely reset the environment and must do so assuming the jet was off
         # and sample is equilibrated at room temperature (X = y = u = 0)
         newyset = yset_seq[0]
-        ob = env.reset(u=0, y=0, newyset=newyset)
+        ob = env.reset(u=1.5, y=34.6, newyset=newyset)
         print(ob)
         ob = env.reset_setpoint(yset_seq[0])
         print(ob)
@@ -1226,7 +1530,7 @@ def run_live_agent(agent, env, s, args):
         for step in range(len(yset_seq)):
             # for now let's update the set point at each timestep
             # this could be useful if we want to do ramped T increase, etc
-            print("Train iter: %d"%step)
+            print("\nTrain iter: %d"%step)
             print('obs:', env._obs)
 
             if agent.ac_bounds == False:
@@ -1234,36 +1538,48 @@ def run_live_agent(agent, env, s, args):
                                     feed_dict={'ob:0':np.array(ob)[None]})
             else:
                 ac = agent.sess.run(agent.sy_sampled_ac, 
-                                    feed_dict={'ob:0':np.array(ob)[None],
-                                               agent.sy_ac_boundlow_a: agent.ac_bounds[0],
-                                               agent.sy_ac_boundhi_a:  agent.ac_bounds[1]})
+                          ed_dict={'ob:0':np.array(ob)[None],
+                                   agent.sy_ac_boundlow_a: agent.ac_bounds[0],
+                                   agent.sy_ac_boundhi_a:  agent.ac_bounds[1]
+                                  })
 
             # tf outputs action vector embedded in a list
             ac = ac[0] 
-            # by convention ac is a vector for multidimensional case, and power is 1st dimension
-            u = env.clip_u(ac[0]) 
-            # we actually want to pass power in real units/scale
-            P = env.real_u_to_P(u) 
+
+            # clip NN's predicted power to w/in bounds
+            #u = env.clip_u(ac[0]) # NOTE relative to SS if using data driven
+            #P = env.real_u_to_P(u) 
+
+            P = env.clip_P(ac[0]) # NOTE absolute P if using phyics model           
+
             # pass power, Tset in real units/scale
-            msg = ','.join(str(e) for e in [P,str(env.real_y_to_T(newyset))]) 
+            #msg = ','.join(str(e) for e in [P,str(env.real_y_to_T(newyset))]) 
+            msg = ','.join(str(e) for e in [P,str(newyset)]) 
 
             # add the time stamp here
             print("msg sent:", msg) 
 
+            # send power input, receive temperature response
             s.send(msg.encode())
-            #meas = input('manual state update, input T_meas:')
             meas =s.recv(1024).decode()                     #recieve measurement     
+
+            # Alternatively for some debugging purposes, can do manual input
+            #meas = input('manual state update, input T_meas:')
+
             print("msg recv:", meas)
             print("time between:")
 
             T_meas =[ [float(i)] for i in meas.split('\n')]
-            y = env.T_to_y(T_meas[0][0]) 
+            #y = env.T_to_y(T_meas[0][0]) 
+            y = T_meas[0][0]
 
-            data = [step, T_meas[0][0], env.real_y_to_T(newyset), P, 0.0, 0.0]
+            #data = [step, T_meas[0][0], env.real_y_to_T(newyset), P, 0.0, 0.0]
+            data = [step, y, newyset, P, 0.0, 0.0, ac[0]]
             logdata.append(data)
-            print("logdata:", data)  
+            print("logdata before obs update:", data)  
 
-            env.update_observation(y, u)
+            #env.update_observation(y, u)
+            env.update_observation(y, P)
 
             newyset = yset_seq[step]
             ob = env.reset_setpoint(newyset)
@@ -1301,16 +1617,14 @@ def run_live_agent(agent, env, s, args):
 
             #s.send(msg.encode())
 
-            data = [step, T_meas[0][0], env.real_y_to_T(newyset), P, 0.0, 0.0]
-            logdata.append(data)
-            print("logdata:", data)  
+            data = [step, y, newyset, P, 0.0, 0.0, ac[0]]
+            print("logdata after obs update:", data)  
 
 
 
     except Exception as e:
         print("Error occurred in policy rollout:")
         print(e)
-        return False
     
             
     write_control_sequence(os.path.join(args['logdir'],"seqLive.txt"),logdata)
@@ -1340,6 +1654,7 @@ def establish_don_socket():
 def main():
     import argparse
     parser = argparse.ArgumentParser()
+    # training based options
     parser.add_argument('env_name', type=str)
     parser.add_argument('--exp_name', type=str, default='vac')
     parser.add_argument('--render', action='store_true')
@@ -1358,8 +1673,10 @@ def main():
     parser.add_argument('--n_experiments', '-e', type=int, default=1)
     parser.add_argument('--n_layers', '-l', type=int, default=2)
     parser.add_argument('--size', '-s', type=int, default=64)
-    # some plasma parameters
-    parser.add_argument('--dynamics','-dyn', type=str, default='DYN_1') # ensemble of dynamics params to sample from
+
+    # plasma specific
+    parser.add_argument('--dynamics_model','-dyn', type=str, default='physics1') # ensemble of dynamics params to sample from
+    parser.add_argument('--param_uncertainty','-punc', type=str, default='Glass') # ensemble of dynamics params to sample from
     parser.add_argument('--ranXsig','-sig', type=float, default=0)
     parser.add_argument('--rewModel', '-rew', type=int, default=1)
     parser.add_argument('--execute', type=str, default='None')
@@ -1421,16 +1738,26 @@ def main():
     else:
         # args.execute contains path to params.json that corresponds to the trained
         # model we want to execute in real time
+        invivo=True
+
         paramfile = os.path.join(args.execute,"params.json")
         if(os.path.isfile(paramfile)):
             with open(paramfile, "r") as fh:
                 params = json.load(fh)
+            
             liveagent, env = init_live_AC_agent(params)
-            #s = establish_don_socket()
-            #completed = run_live_agent(liveagent, env, s, params)
-            #s.close()
-            ysets = [env.T_to_y(T) for T in GLOBAL_T_SEQ]
-            completed = run_insilico_agent(liveagent, env, params, ysets=ysets)
+
+            # in vivo live perforamnce
+            if invivo:
+                s = establish_don_socket()
+                #s = None
+                completed = run_live_agent(liveagent, env, s, params)
+                s.close()
+            else:
+                # in silico "live" experiments
+                #ysets = [env.T_to_y(T) for T in GLOBAL_T_SEQ]
+                ysets = GLOBAL_T_SEQ
+                completed = run_insilico_agent(liveagent, env, params, ysets=ysets)
         else:
             raise ValueError("No parameters file found at location:\n%s"+\
                              "Cannot reinitialize tf session to execute trained model"%\
