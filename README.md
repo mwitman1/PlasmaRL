@@ -5,7 +5,8 @@ Supporting Code for:
 Witman, M; Gidon, D.; Graves, D.B.; Smit, B.; Mesbah, A. "Sim-to-real transfer reinforcement learning for control of thermal effects of an atomospheric pressure plasma jet"
 
 1. Train the RLC:
-python train_ac_f18_plasma.py PlasmaModel -ep 100 -epext 1 --discount 0.99 -n 3000 -e 1 -l 2 -s 64 -b 10000 -lr 0.005 -ntu 10 -ngsptu 10 --exp_name test  
+python train_ac_f18_plasma.py PlasmaModel -ep 100 -epext 1 --discount 0.99 -n 3000 -e 1 -l 2 -s 64 -b 10000 -lr 0.005 -ntu 10 -ngsptu 10 --exp_name test
+  
     PlasmaModel     : use the plasma model dynamics files  
     -ep 100         : number of episode/roll-outs per training epoch  
     -epext 1        : number of timesteps at the end which are NOT included   
