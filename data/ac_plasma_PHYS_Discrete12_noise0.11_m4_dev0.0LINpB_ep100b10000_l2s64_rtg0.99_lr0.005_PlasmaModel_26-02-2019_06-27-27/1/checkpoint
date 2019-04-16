@@ -1,0 +1,2 @@
+model_checkpoint_path: "/home/mw/Dropbox/Berkeley_classes/CS294-112/project/src/plasma_stuff_physics/data/ac_plasma_PHYS_Discrete12_noise0.11_m4_dev0.0LINpB_ep100b10000_l2s64_rtg0.99_lr0.005_PlasmaModel_26-02-2019_06-27-27/1/saved.tf"
+all_model_checkpoint_paths: "/home/mw/Dropbox/Berkeley_classes/CS294-112/project/src/plasma_stuff_physics/data/ac_plasma_PHYS_Discrete12_noise0.11_m4_dev0.0LINpB_ep100b10000_l2s64_rtg0.99_lr0.005_PlasmaModel_26-02-2019_06-27-27/1/saved.tf"
