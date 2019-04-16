@@ -1429,10 +1429,11 @@ def run_insilico_agent(agent, env, args, ysets=None):
     # generate a heat map to visualize performance over parameter space
     agent.polysampler = PolySample([(3.,0.96),(1.8,0.96),(1.8,0.66),(3.0,0.66)])
     x, y, te, tdu = [], [], [], []
-    for i in range(5000):
+    print("Validating over randomized physics params:")
+    for i in range(50):
         print(i)
         # sample points within an a, b polygon
-        point = agent.polysampler.random_points_in_polygon(1)
+        #point = agent.polysampler.random_points_in_polygon(1)
 
         # sample points within the tau, gain range
         #point = agent.polysampler.custom_plasma_sampling(1, **DYN_TauMAX_SSSmall_KWARGS)
@@ -1738,7 +1739,7 @@ def main():
     else:
         # args.execute contains path to params.json that corresponds to the trained
         # model we want to execute in real time
-        invivo=True
+        invivo=False
 
         paramfile = os.path.join(args.execute,"params.json")
         if(os.path.isfile(paramfile)):
